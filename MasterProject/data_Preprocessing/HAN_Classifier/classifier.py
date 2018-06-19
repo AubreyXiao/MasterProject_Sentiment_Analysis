@@ -1,3 +1,5 @@
+import os
+os.environ['KERAS_BACKEND']='theano'
 import numpy as np
 from keras import backend as K
 from keras.engine.topology import Layer, InputSpec
@@ -13,42 +15,43 @@ from keras.layers import Dense,Input,Flatten
 from keras.layers import Conv1D,MaxPooling1D,Embedding,Merge,Dropout, LSTM, GRU, Bidirectional, TimeDistributed
 from keras.models import Model
 
+
 #define word2vec model
-model = "400dim_30min_10windows.txt"
+model = "300dim_30min_20windows.txt"
 Model_MAN = get_model.model()
 
 #final parmeters
 WORDS_NUM = 100
 SEN_NUM = 15
 MAX_NB_WORDS = 20000
-DIM = 400
+DIM = 300
 
-# class AttLayer(Layer):
-#     def __init__(self, **kwargs):
-#         self.init = initializers.get('normal')
-#         # self.input_spec = [InputSpec(ndim=3)]
-#         super(AttLayer, self).__init__(**kwargs)
-#
-#     def build(self, input_shape):
-#         assert len(input_shape) == 3
-#         # self.W = self.init((input_shape[-1],1))
-#         self.W = self.init((input_shape[-1],))
-#         # self.input_spec = [InputSpec(shape=input_shape)]
-#         self.trainable_weights = [self.W]
-#         super(AttLayer, self).build(input_shape)  # be sure you call this somewhere!
-#
-#     def call(self, x, mask=None):
-#         eij = K.tanh(K.dot(x, self.W))
-#
-#         ai = K.exp(eij)
-#         weights = ai / K.sum(ai, axis=1).dimshuffle(0, 'x')
-#
-#         weighted_input = x * weights.dimshuffle(0, 1, 'x')
-#         return weighted_input.sum(axis=1)
-#
-#     def get_output_shape_for(self, input_shape):
-#         return (input_shape[0], input_shape[-1])
-#
+class AttLayer(Layer):
+    def __init__(self, **kwargs):
+        self.init = initializers.get('normal')
+        # self.input_spec = [InputSpec(ndim=3)]
+        super(AttLayer, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        assert len(input_shape) == 3
+        self.W = self.add_weight(name='kernel',
+                                 shape=(input_shape[-1],),
+                                 initializer='normal',
+                                 trainable=True)
+        super(AttLayer, self).build(input_shape)
+
+    def call(self, x, mask=None):
+        eij = K.tanh(K.dot(x, self.W))
+
+        ai = K.exp(eij)
+        weights = ai / K.sum(ai, axis=1).dimshuffle(0, 'x')
+
+        weighted_input = x * weights.dimshuffle(0, 1, 'x')
+        return weighted_input.sum(axis=1)
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0], input_shape[-1]
+
 
 
 
@@ -135,58 +138,56 @@ print(count)
 #create a embedding layer
 wordvec_embedding = Embedding(len(word_index)+1,DIM, weights=[embedding_matrix],input_length=WORDS_NUM, trainable=True)
 
-
-#create the lstm classifer
-sentence_input = Input(shape=(WORDS_NUM,), dtype='int32')
-embedded_sequences = wordvec_embedding(sentence_input)
-l_lstm = Bidirectional(LSTM(100))(embedded_sequences)
-sentEncoder = Model(sentence_input, l_lstm)
-
-review_input = Input(shape=(SEN_NUM,WORDS_NUM), dtype='int32')
-review_encoder = TimeDistributed(sentEncoder)(review_input)
-l_lstm_sent = Bidirectional(LSTM(100))(review_encoder)
-preds = Dense(2, activation='softmax')(l_lstm_sent)
-model = Model(review_input, preds)
-
-model.compile(loss='categorical_crossentropy',
-              optimizer='rmsprop',
-              metrics=['acc'])
-
-print("model fitting - Hierachical LSTM")
-print(model.summary())
-model.fit(x_train, y_train, validation_data=(x_val, y_val),
-          epoch=10, batch_size=50)
-
-
-
-
+#
+# #create the lstm classifer
+# sentence_input = Input(shape=(WORDS_NUM,), dtype='int32')
+# embedded_sequences = wordvec_embedding(sentence_input)
+# l_lstm = Bidirectional(LSTM(100))(embedded_sequences)
+# sentEncoder = Model(sentence_input, l_lstm)
+#
+# review_input = Input(shape=(SEN_NUM,WORDS_NUM), dtype='int32')
+# review_encoder = TimeDistributed(sentEncoder)(review_input)
+# l_lstm_sent = Bidirectional(LSTM(100))(review_encoder)
+# preds = Dense(2, activation='softmax')(l_lstm_sent)
+# model = Model(review_input, preds)
+#
+# model.compile(loss='categorical_crossentropy',
+#               optimizer='rmsprop',
+#               metrics=['acc'])
+#
+# print("model fitting - Hierachical LSTM")
+# print(model.summary())
+# model.fit(x_train, y_train, validation_data=(x_val, y_val),
+#           epoch=10, batch_size=50)
+#
+#
 
 
 #build up the hierarchical neural network
-# #create the sentence input
-# input_sen = Input(shape=(WORDS_NUM,),dtype='int32')
-# sentence_sequence = wordvec_embedding(input_sen)
-# l_lstm = Bidirectional(GRU(100,return_sequences=True))(sentence_sequence)
-# l_dense = TimeDistributed(Dense(200))(l_lstm)
-# l_att = AttLayer()(l_dense)
-# sen_encoder = Model(input_sen,l_att)
-#
-# #create review imnput
-# input_review = Input(shape=(SEN_NUM,WORDS_NUM),dtype='int32')
-# review_encoder = TimeDistributed(sen_encoder)(input_review)
-# l_lstm_sent = Bidirectional(GRU(100,return_sequences=True))(review_encoder)
-# l_dense_sent = TimeDistributed(Dense(200))(l_lstm_sent)
-# l_att_sent = AttLayer()(l_dense_sent)
-# preds = Dense(2,activation='softmax')(l_att_sent)
-# model = Model(input_review,preds)
-#
-# #compile the model
-# model.compile(loss = 'categorical_crossentropy',optimizer='rmsprop',metrics=['acc'])
-#
-# #fit the model
-# print("fitting the_HAN model")
-# print(model.summary())
-# model.fit(x_train,y_train,validation_data=(x_val,y_val),nb_epoch=10,batch_size=50)
+#create the sentence input
+input_sen = Input(shape=(WORDS_NUM,),dtype='int32')
+sentence_sequence = wordvec_embedding(input_sen)
+l_lstm = Bidirectional(GRU(100,return_sequences=True))(sentence_sequence)
+l_dense = TimeDistributed(Dense(200))(l_lstm)
+l_att = AttLayer()(l_dense)
+sen_encoder = Model(input_sen,l_att)
+
+#create review input
+input_review = Input(shape=(SEN_NUM,WORDS_NUM),dtype='int32')
+review_encoder = TimeDistributed(sen_encoder)(input_review)
+l_lstm_sent = Bidirectional(GRU(100,return_sequences=True))(review_encoder)
+l_dense_sent = TimeDistributed(Dense(200))(l_lstm_sent)
+l_att_sent = AttLayer()(l_dense_sent)
+preds = Dense(2,activation='softmax')(l_att_sent)
+model = Model(input_review,preds)
+
+#compile the model
+model.compile(loss = 'categorical_crossentropy',optimizer='rmsprop',metrics=['acc'])
+
+#fit the model
+print("fitting the_HAN model")
+print(model.summary())
+model.fit(x_train,y_train,validation_data=(x_val,y_val),epochs=10,batch_size=50)
 
 
 
